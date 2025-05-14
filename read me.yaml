@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>スネークゲーム</title>
+  <style>
+    body { display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f0f0f0; }
+    #gameContainer { position: relative; width: 640px; height: 360px; }
+    canvas { display: block; }
+
+    /* 共通ボタンスタイル */
+    .overlay-btn {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      padding: 12px 24px;
+      font-size: 18px;
+      background: linear-gradient(to right, purple, blue);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      z-index: 2;
+      overflow: hidden;
+      animation: glowPulse 2s ease-in-out infinite;
+    }
+    .overlay-btn::before {
+      content: '';
+      position: absolute;
+      top: 50%; left: 50%;
+      width: 160%; height: 160%;
+      background: radial-gradient(circle at center, rgba(255,255,255,0.6), transparent 70%);
+      filter: blur(8px);
+      transform: translate(-50%, -50%);
+      opacity: 0.7;
+      animation: rotateWaver 3s linear infinite;
+    }
+    .overlay-btn.hidden { display: none; }
+
+    @keyframes glowPulse {
+      0%, 100% { box-shadow: 0 0 8px rgba(255,255,255,0.5); }
+      50%      { box-shadow: 0 0 20px rgba(255,255,255,0.8); }
+    }
+    @keyframes rotateWaver {
+      0%   { transform: translate(-50%, -50%) rotate(0deg) scale(1); opacity: 0.6; }
+      25%  { opacity: 0.8; }
+      50%  { transform: translate(-50%, -50%) rotate(180deg) scale(1.1); opacity: 0.6; }
+      75%  { opacity: 0.8; }
+      100% { transform: translate(-50%, -50%) rotate(360deg) scale(1); opacity: 0.6; }
+    }
+  </style>
+</head>
+<body>
+  <div id="gameContainer">
+    <button id="startBtn" class="overlay-btn">スタート</button>
+    <button id="gameOverBtn" class="overlay-btn hidden">ゲームオーバー</button>
+    <canvas id="gameCanvas" width="640" height="360"></canvas>
+  </div>
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const gridSize = 20;
+    const tileCountX = canvas.width / gridSize;
+    const tileCountY = canvas.height / gridSize;
+
+    let snake = [];
+    let velocity = { x: 0, y: 0 };
+    let food = {};
+    let score = 0;
+    let gameInterval = null;
+    let isGameOver = false;
+    const speed = 150;
+    const startBtn = document.getElementById('startBtn');
+    const gameOverBtn = document.getElementById('gameOverBtn');
+    let gradientOffset = 0;
+
+    // キー操作
+    document.addEventListener('keydown', e => {
+      if (!gameInterval || isGameOver) return;
+      const dirs = {
+        ArrowUp:    { x: 0, y: -1 },
+        ArrowDown:  { x: 0, y: 1 },
+        ArrowLeft:  { x: -1, y: 0 },
+        ArrowRight: { x: 1, y: 0 }
+      };
+      const dir = dirs[e.key];
+      if (dir) {
+        // 逆方向への切り替えを無視
+        if (velocity.x + dir.x !== 0 || velocity.y + dir.y !== 0) {
+          velocity = dir;
+        }
+      }
+    });
+
+    // スタートボタン
+    startBtn.addEventListener('click', () => {
+      resetGame();
+      startBtn.classList.add('hidden');
+      isGameOver = false;
+      velocity = { x: 1, y: 0 };
+      gameInterval = setInterval(gameLoop, speed);
+    });
+
+    function resetGame() {
+      snake = [{ x: Math.floor(tileCountX / 2), y: Math.floor(tileCountY / 2) }];
+      velocity = { x: 0, y: 0 };
+      food = randomFood();
+      score = 0;
+      isGameOver = false;
+      clearInterval(gameInterval);
+      gameInterval = null;
+      gameOverBtn.classList.add('hidden');
+      startBtn.classList.remove('hidden');
+      draw();
+    }
+
+    function gameLoop() {
+      update();
+      draw();
+    }
+
+    function update() {
+      const head = {
+        x: snake[0].x + velocity.x,
+        y: snake[0].y + velocity.y
+      };
+      // 壁または自身への衝突
+      if (
+        head.x < 0 || head.x >= tileCountX ||
+        head.y < 0 || head.y >= tileCountY ||
+        snake.some(seg => seg.x === head.x && seg.y === head.y)
+      ) {
+        triggerGameOver();
+        return;
+      }
+      snake.unshift(head);
+      // 食べ物
+      if (head.x === food.x && head.y === food.y) {
+        score++;
+        food = randomFood();
+      } else {
+        snake.pop();
+      }
+    }
+
+    function draw() {
+      // 動くグラデーション背景
+      gradientOffset = (gradientOffset + 1) % canvas.width;
+      const grad = ctx.createLinearGradient(
+        gradientOffset, 0,
+        gradientOffset + canvas.width, canvas.height
+      );
+      grad.addColorStop(0, 'purple');
+      grad.addColorStop(1, 'blue');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // 食べ物
+      ctx.fillStyle = 'red';
+      ctx.fillRect(
+        food.x * gridSize,
+        food.y * gridSize,
+        gridSize, gridSize
+      );
+
+      // ヘビ
+      ctx.fillStyle = 'lime';
+      snake.forEach(seg => {
+        ctx.fillRect(
+          seg.x * gridSize,
+          seg.y * gridSize,
+          gridSize - 2,
+          gridSize - 2
+        );
+      });
+      // 目
+      if (snake.length) {
+        const head = snake[0];
+        const cx = head.x * gridSize + gridSize / 2;
+        const cy = head.y * gridSize + gridSize / 2;
+        const offset = gridSize / 4;
+        const radius = gridSize / 8;
+        ctx.fillStyle = 'black';
+        ctx.beginPath();
+        ctx.arc(cx - offset, cy - offset, radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(cx + offset, cy - offset, radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // スコア
+      ctx.fillStyle = 'white';
+      ctx.font = '16px sans-serif';
+      ctx.fillText('Score: ' + score, 10, canvas.height - 10);
+    }
+
+    function triggerGameOver() {
+      clearInterval(gameInterval);
+      gameInterval = null;
+      isGameOver = true;
+      // ボタン切り替え
+      gameOverBtn.classList.remove('hidden');
+      startBtn.classList.add('hidden');
+      // 2秒後に復帰
+      setTimeout(() => {
+        startBtn.classList.remove('hidden');
+        gameOverBtn.classList.add('hidden');
+      }, 2000);
+    }
+
+    function randomFood() {
+      let pos;
+      do {
+        pos = {
+          x: Math.floor(Math.random() * tileCountX),
+          y: Math.floor(Math.random() * tileCountY)
+        };
+      } while (
+        snake.some(seg => seg.x === pos.x && seg.y === pos.y)
+      );
+      return pos;
+    }
+
+    // 初期描画
+    draw();
+  </script>
+</body>
+</html>
